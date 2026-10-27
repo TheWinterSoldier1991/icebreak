@@ -3,10 +3,10 @@ import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 
 export const metadata: Metadata = {
-  title: "IceBreak — a steadier way to budget",
+  title: "IcebreaK — a steadier way to budget",
   description:
     "A calm, flexible budget for student life. Split every deposit, track your goals, and know what is safe to spend.",
-  applicationName: "IceBreak",
+  applicationName: "IcebreaK",
 };
 
 export const viewport: Viewport = {
@@ -22,3 +22,4 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     </html>
   );
 }
+
