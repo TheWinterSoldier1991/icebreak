@@ -99,6 +99,27 @@ export function IceBreakApp() {
   const [openPlaidAfterReady, setOpenPlaidAfterReady] = useState(false);
   const [bankConnected, setBankConnected] = useState(false);
   const [syncingBank, setSyncingBank] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    try {
+      setDarkMode(window.localStorage.getItem("icebreak-theme") === "dark");
+    } catch {
+      // Keep the default light theme when browser storage is unavailable.
+    }
+  }, []);
+
+  function toggleTheme() {
+    setDarkMode((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem("icebreak-theme", next ? "dark" : "light");
+      } catch {
+        // The theme still changes for this session when storage is unavailable.
+      }
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -410,7 +431,7 @@ export function IceBreakApp() {
   const recent = showAllTransactions ? transactions : transactions.slice(0, 5);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-theme={darkMode ? "dark" : "light"}>
       {mobileNavOpen && <button className="mobile-scrim" aria-label="Close menu" onClick={() => setMobileNavOpen(false)} />}
       <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
         <a className="brand" href="#overview" onClick={() => chooseSection("overview")}>
@@ -447,6 +468,7 @@ export function IceBreakApp() {
           <div className="breadcrumb"><span>My space</span><span className="breadcrumb-divider">/</span><strong>{navItems.find((item) => item.id === section)?.label ?? "Settings"}</strong></div>
           <div className="topbar-actions">
             <span className="demo-pill"><span className="demo-dot" /> {user ? "Your workspace" : "Demo workspace"}</span>
+            <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label={`Switch to ${darkMode ? "light" : "dark"} mode`} aria-pressed={darkMode} title={`Switch to ${darkMode ? "light" : "dark"} mode`}><span aria-hidden="true">{darkMode ? "☀" : "☾"}</span><span className="theme-toggle-label">{darkMode ? "Light" : "Dark"}</span></button>
             <button className="icon-button notification-button" aria-label="Notifications" onClick={() => setMessage("You’re all caught up.")}><Icon>♧</Icon><span className="notification-dot" /></button>
             {user
               ? <button className="topbar-signin" onClick={() => void signOutUser()}>Sign out <span>↗</span></button>
@@ -592,3 +614,4 @@ function TransactionTableRow({ transaction, categories }: { transaction: Transac
   const category = categories.find((item) => item.id === transaction.categoryId);
   return <div className="table-row"><div className="table-transaction"><span className={`transaction-icon ${transaction.type === "income" ? "transaction-income" : ""}`}>{transaction.type === "income" ? "↙" : category?.icon ?? "◦"}</span><strong>{transaction.description}</strong></div><span>{category?.name ?? "Safe to Spend"}</span><span>{dateLabel(transaction.date)}</span><strong className={`transaction-amount ${transaction.type === "income" ? "amount-income" : ""}`}>{transaction.type === "income" ? "+" : "−"}{formatMoney(transaction.amountCents)}</strong></div>;
 }
+
