@@ -436,7 +436,7 @@ export function IceBreakApp() {
       <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""}`}>
         <a className="brand" href="#overview" onClick={() => chooseSection("overview")}>
           <span className="brand-mark"><span>i</span></span>
-          <span className="brand-name">icebreak<span className="brand-period">.</span></span>
+          <span className="brand-name">IcebreaK<span className="brand-period">.</span></span>
         </a>
         <div className="workspace-label">YOUR SPACE</div>
         <nav className="side-nav" aria-label="Main navigation">
@@ -586,7 +586,7 @@ export function IceBreakApp() {
             <article className="panel settings-panel"><div className="panel-heading"><div><h2>Privacy & security</h2><p>Your financial data belongs to you.</p></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>Private by default</strong><small>Only your account can read its budget; writes are validated in Cloud Functions.</small></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>Bank details stay protected</strong><small>Plaid access tokens are server-side only and cannot be read by the client.</small></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>30-minute idle sign-out</strong><small>Your session is scoped to this browser tab.</small></div></div><button className="primary-button settings-connect" onClick={() => user ? void signOutUser() : (setAuthMode("signup"), openModal("signin"))}>{user ? "Sign out" : "Create your account"} <span>↗</span></button></article>
           </section>}
 
-          <footer className="footer-note"><span>Made for the in-between moments.</span><span>IceBreak <i>·</i> Your money, your pace.</span></footer>
+          <footer className="footer-note"><span>Made for the in-between moments.</span><span>IcebreaK <i>·</i> Your money, your pace.</span></footer>
         </div>
       </main>
 
