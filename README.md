@@ -24,7 +24,7 @@ Without Firebase configuration, the app stays in sample-data demo mode. Demo cha
 
 ## Firebase and Plaid setup
 
-The Firebase project is `icebreak-wts1991-20261027`. Use the detailed walkthrough in [docs/SETUP.md](docs/SETUP.md) to select a Firestore location, enable Authentication, register a Web app, deploy rules and Functions, add Plaid Sandbox credentials, and configure Vercel.
+The Firebase project is `icebreak-wts1991-20261027`. Its Standard Firestore database is in `us-west1`, the owner-only rules are deployed, and the Firebase Web App is registered. Use [docs/SETUP.md](docs/SETUP.md) to enable Email/Password sign-in, finish Cloud Functions and Plaid Sandbox setup, and connect GitHub deployments.
 
 Plaid client credentials belong only in Firebase Functions secrets. Never put a Plaid secret or Firebase service-account key in browser code, GitHub, or a `NEXT_PUBLIC_` variable.
 
@@ -38,4 +38,4 @@ Plaid client credentials belong only in Firebase Functions secrets. Never put a 
 
 ## Deploy
 
-The repository is linked to Vercel and `main` is the production branch. Set the `NEXT_PUBLIC_FIREBASE_*` Web App values in Vercel Project Settings, then deploy. Vercel environment variables are public browser configuration only; keep Plaid credentials in Firebase Functions secrets.
+The current production build is deployed at [icebreak-ten.vercel.app](https://icebreak-ten.vercel.app), with Firebase Web App values already set in Vercel. The Vercel GitHub App is not yet connected, so pushes to `main` do not automatically deploy. Connect the `TheWinterSoldier1991/icebreak` repository in Vercel Project Settings → Git to enable that workflow. Vercel SSO protection is enabled for the default `.vercel.app` domain. Cloud Functions deployment is pending Firebase's Blaze billing requirement; do not put Plaid credentials in Vercel or GitHub.

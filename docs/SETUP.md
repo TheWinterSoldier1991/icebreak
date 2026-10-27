@@ -6,26 +6,28 @@ Firebase Functions region in this codebase: `us-west1`
 
 ## 1. Firebase project and Firestore
 
-The Firebase project has been created. Before creating Firestore, choose a database location in the Firebase Console. Location is difficult or impossible to change later. `us-west1` is a reasonable latency choice for a California-based owner, but select the region that fits your users and any data-residency requirements.
+The Firebase project and default Standard Firestore database have been created in `us-west1`. Database location is difficult or impossible to change later; this region was selected for this project.
 
 1. Open the [IceBreak Firebase Console](https://console.firebase.google.com/project/icebreak-wts1991-20261027/overview).
-2. Open **Firestore Database** and create the default database using the **Standard** edition and the location you selected.
-3. Deploy the rules and functions from this repository:
+2. The default database and owner-only rules are already provisioned. To redeploy the rules from this repository:
 
    ```sh
    npx -y firebase-tools@latest login
    npx -y firebase-tools@latest use icebreak-wts1991-20261027
-   npx -y firebase-tools@latest deploy --only firestore:rules,functions
+   npx -y firebase-tools@latest deploy --only firestore:rules --project icebreak-wts1991-20261027
    ```
 
-The app's Firestore rules allow a signed-in user to read only their own profile and budget collections. Direct client writes and all client access to Plaid token documents are denied. Cloud Functions use the Admin SDK for validated writes.
+The app's Firestore rules allow a signed-in user to read only their own profile and budget collections. Direct client writes and all client access to Plaid token documents are denied. Cloud Functions use the Admin SDK for validated writes. Functions have not yet been deployed: Firebase CLI reported that the project must be upgraded to the Blaze plan before Google will enable Cloud Build. No billing-plan change was made. After the owner approves that billing change, core budget functions can be deployed with:
+
+   ```sh
+   npx -y firebase-tools@latest deploy --only functions:bootstrapUser,functions:createTransaction,functions:createCategory,functions:createGoal,functions:contributeToGoal --project icebreak-wts1991-20261027
+   ```
 
 ## 2. Firebase Authentication and Web App
 
 1. In Firebase Console, open **Authentication → Get started → Sign-in method** and enable **Email/Password**.
 2. Under Authentication settings, add the deployed Vercel domain to **Authorized domains**.
-3. Create or select a Firebase **Web App** named `IceBreak Web` in Project settings.
-4. Copy its Firebase Web configuration values into `.env.local` for local development and into Vercel Project → **Settings → Environment Variables** for Preview and Production:
+3. The Firebase **Web App** named `IceBreak Web` is already registered. Its public client configuration is already set in Vercel for Production, Preview, and Development. For local development, copy the Firebase Web values into `.env.local`:
 
    - `NEXT_PUBLIC_FIREBASE_API_KEY`
    - `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
@@ -56,7 +58,7 @@ Firebase Authentication has its own abuse protection. The requested custom locko
    npx -y firebase-tools@latest functions:secrets:set PLAID_SECRET --project icebreak-wts1991-20261027
    ```
 
-5. Deploy Functions so the secret-backed Plaid endpoints are available:
+5. After upgrading the project to Blaze, deploy Functions so the secret-backed Plaid endpoints are available:
 
    ```sh
    npx -y firebase-tools@latest deploy --only functions --project icebreak-wts1991-20261027
@@ -68,7 +70,7 @@ The integration defaults to Plaid Sandbox. Do not use live financial accounts un
 
 ## 4. Vercel deployment
 
-The GitHub repository is linked to the Vercel project `icebreak`; `main` is the production branch. After adding the Firebase Web App variables above, trigger a new deployment in Vercel or push a follow-up commit. Configure those same public Firebase values for Preview if you want preview URLs to support sign-in. Keep all Plaid secrets only in Firebase Functions.
+The project `icebreak` has a READY production deployment at [icebreak-ten.vercel.app](https://icebreak-ten.vercel.app). It was deployed directly from commit `3249d9a`; Firebase Web App values are already present in Vercel. Vercel reported that its GitHub App must be installed before the repository can be linked. To enable automatic deployments, install/authorize the Vercel GitHub App for `TheWinterSoldier1991/icebreak`, then connect that repository in the project's **Settings → Git** page. The default `.vercel.app` domains have Vercel SSO protection enabled. Keep all Plaid secrets only in Firebase Functions.
 
 ## 5. Local emulators
 
