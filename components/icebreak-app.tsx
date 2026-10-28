@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { collection, doc, limit, onSnapshot, orderBy, query } from "firebase/firestore";
 import { usePlaidLink } from "@/lib/use-plaid-link";
 import { callBackend } from "@/lib/backend";
+import { callPlaid } from "@/lib/plaid";
 import { useAuth } from "@/lib/auth-context";
-import { getFirebaseClient } from "@/lib/firebase";
+import { createClient } from "@/lib/supabase/client";
 import {
   formatMoney,
   parseMoneyToCents,
@@ -122,64 +122,100 @@ export function IceBreakApp() {
   }
 
   useEffect(() => {
-    if (!user) return;
-    const client = getFirebaseClient();
-    if (!client) return;
-    const profileRef = doc(client.db, "users", user.uid);
-    const categoriesRef = collection(client.db, "users", user.uid, "categories");
-    const transactionsRef = query(collection(client.db, "users", user.uid, "transactions"), orderBy("createdAt", "desc"), limit(200));
-    const goalsRef = query(collection(client.db, "users", user.uid, "goals"), orderBy("createdAt", "desc"));
-    const stopProfile = onSnapshot(profileRef, (snapshot) => {
-      if (snapshot.exists()) setUnallocatedCents(snapshot.data().unallocatedCents ?? 0);
-    }, () => setMessage("Couldn’t load your budget profile. Confirm Firestore is created and deployed."));
-    const stopCategories = onSnapshot(categoriesRef, (snapshot) => {
-      setCategories(snapshot.docs.map((item) => ({
+    if (!user) {
+      setCategories(initialCategories);
+      setTransactions(initialTransactions);
+      setGoals(initialGoals);
+      setUnallocatedCents(57840);
+      setBankConnected(false);
+      return;
+    }
+
+    const supabase = createClient();
+    if (!supabase) return;
+    let cancelled = false;
+    let refreshTimer: number | undefined;
+
+    const loadBudget = async () => {
+      const [profileResult, categoryResult, transactionResult, goalResult] = await Promise.all([
+        supabase.from("profiles").select("unallocated_cents").eq("id", user.id).maybeSingle(),
+        supabase.from("categories").select("id,name,icon,color,target_percent,target_cents,spent_cents,balance_cents,kind").eq("user_id", user.id).order("created_at").order("id"),
+        supabase.from("transactions").select("id,description,category_id,amount_cents,type,pending,created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(200),
+        supabase.from("goals").select("id,name,target_cents,saved_cents,due").eq("user_id", user.id).order("created_at").order("id"),
+      ]);
+
+      const failure = profileResult.error || categoryResult.error || transactionResult.error || goalResult.error;
+      if (failure) {
+        if (!cancelled) setMessage("Couldn’t load your budget. Check the Supabase migration and row security setup.");
+        return;
+      }
+      if (!profileResult.data) {
+        if (!cancelled) setMessage("Your Supabase budget profile is not ready. Apply the migration and sign in again.");
+        return;
+      }
+      if (cancelled) return;
+
+      setUnallocatedCents(profileResult.data?.unallocated_cents ?? 0);
+      setCategories((categoryResult.data ?? []).map((item) => ({
         id: item.id,
-        name: item.data().name,
-        icon: item.data().icon || "◦",
-        color: item.data().color || "#537f72",
-        targetPercent: item.data().targetPercent || 0,
-        targetCents: item.data().targetCents || 0,
-        spentCents: item.data().spentCents || 0,
-        balanceCents: item.data().balanceCents || 0,
-        kind: item.data().kind === "savings" ? "savings" : "spending",
+        name: item.name,
+        icon: item.icon || "◦",
+        color: item.color || "#537f72",
+        targetPercent: Number(item.target_percent) || 0,
+        targetCents: Number(item.target_cents) || 0,
+        spentCents: Number(item.spent_cents) || 0,
+        balanceCents: Number(item.balance_cents) || 0,
+        kind: item.kind === "savings" ? "savings" : "spending",
       })));
-    }, () => setMessage("Couldn’t load categories. Check your Firestore rules."));
-    const stopTransactions = onSnapshot(transactionsRef, (snapshot) => {
-      setTransactions(snapshot.docs.map((item) => {
-        const createdAt = item.data().createdAt;
-        return {
-          id: item.id,
-          description: item.data().description || "Transaction",
-          categoryId: item.data().categoryId || "available",
-          amountCents: item.data().amountCents || 0,
-          type: item.data().type === "income" ? "income" : "expense",
-          date: createdAt?.toDate ? createdAt.toDate() : new Date(),
-          pending: Boolean(item.data().pending),
-        };
-      }));
-    }, () => setMessage("Couldn’t load activity. Check your Firestore rules."));
-    const stopGoals = onSnapshot(goalsRef, (snapshot) => {
-      setGoals(snapshot.docs.map((item) => ({
+      setTransactions((transactionResult.data ?? []).map((item) => ({
         id: item.id,
-        name: item.data().name,
-        targetCents: item.data().targetCents || 0,
-        savedCents: item.data().savedCents || 0,
-        due: item.data().due || "No date",
+        description: item.description || "Transaction",
+        categoryId: item.category_id || "available",
+        amountCents: Number(item.amount_cents) || 0,
+        type: item.type === "income" ? "income" : "expense",
+        date: item.created_at ? new Date(item.created_at) : new Date(),
+        pending: Boolean(item.pending),
       })));
-    }, () => setMessage("Couldn’t load goals. Check your Firestore rules."));
-    void callBackend("bootstrapUser", {}).catch(() => setMessage("Your profile is not ready yet. Check Firebase Functions deployment."));
-    void callBackend<{}, { connected: boolean }>("getBankStatus", {}).then((status) => setBankConnected(status.connected)).catch(() => undefined);
-    return () => { stopProfile(); stopCategories(); stopTransactions(); stopGoals(); };
+      setGoals((goalResult.data ?? []).map((item) => ({
+        id: item.id,
+        name: item.name,
+        targetCents: Number(item.target_cents) || 0,
+        savedCents: Number(item.saved_cents) || 0,
+        due: item.due || "No date",
+      })));
+    };
+
+    const scheduleRefresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => { void loadBudget(); }, 120);
+    };
+    void loadBudget();
+
+    const channel = supabase.channel(`budget-${user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles", filter: `id=eq.${user.id}` }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "categories", filter: `user_id=eq.${user.id}` }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "transactions", filter: `user_id=eq.${user.id}` }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "goals", filter: `user_id=eq.${user.id}` }, scheduleRefresh)
+      .subscribe();
+
+    void callPlaid<{ connected: boolean }>("status")
+      .then((status) => { if (!cancelled) setBankConnected(status.connected); })
+      .catch(() => { if (!cancelled) setBankConnected(false); });
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      void supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const plaidHandler = usePlaidLink({
     token: plaidLinkToken,
     onSuccess: async (publicToken) => {
       try {
-        await callBackend("exchangePlaidPublicToken", { publicToken });
+        await callPlaid("exchange_public_token", { publicToken });
         setBankConnected(true);
-        const result = await callBackend<{}, { imported: number }>("syncTransactions", {});
+        const result = await callPlaid<{ imported: number }>("sync_transactions");
         setModal(null);
         setMessage(`Bank connected. Imported ${result.imported} transactions.`);
       } catch (error) {
@@ -213,7 +249,7 @@ export function IceBreakApp() {
   const percentageTotal = categories.reduce((sum, category) => sum + category.targetPercent, 0);
   const activeGoal = goals[0];
   const heroTitle = sectionTitles[section];
-  const profileName = user?.displayName || user?.email?.split("@")[0] || "Student account";
+  const profileName = (typeof user?.user_metadata?.full_name === "string" ? user.user_metadata.full_name : "") || user?.email?.split("@")[0] || "Student account";
   const profileInitials = profileName.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "IB";
 
   function openModal(next: Modal) {
@@ -376,8 +412,8 @@ export function IceBreakApp() {
     setFormError("");
     try {
       if (authMode === "signup") {
-        await signUp(String(form.get("name") ?? ""), String(form.get("email") ?? ""), String(form.get("password") ?? ""));
-        setMessage("Your account is ready. Check your inbox for the verification email.");
+        const confirmationRequired = await signUp(String(form.get("name") ?? ""), String(form.get("email") ?? ""), String(form.get("password") ?? ""));
+        setMessage(confirmationRequired ? "Your account is ready. Check your inbox for the verification email." : "Your account is ready.");
       } else {
         await signIn(String(form.get("email") ?? ""), String(form.get("password") ?? ""));
         setMessage("Welcome back.");
@@ -386,7 +422,7 @@ export function IceBreakApp() {
     } catch (error) {
       const code = (error as { code?: string })?.code;
       const message = error instanceof Error ? error.message : "Could not sign in.";
-      setFormError(code === "auth/invalid-credential" ? "Email or password is incorrect." : message);
+      setFormError(code === "invalid_credentials" || code === "invalid_login_credentials" ? "Email or password is incorrect." : message);
     } finally {
       setAuthBusy(false);
     }
@@ -401,7 +437,7 @@ export function IceBreakApp() {
     }
     try {
       setFormError("");
-      const result = await callBackend<{}, { linkToken: string }>("createLinkToken", {});
+      const result = await callPlaid<{ linkToken: string }>("create_link_token");
       setPlaidLinkToken(result.linkToken);
       setOpenPlaidAfterReady(true);
     } catch (error) {
@@ -413,7 +449,7 @@ export function IceBreakApp() {
     setSyncingBank(true);
     setFormError("");
     try {
-      const result = await callBackend<{}, { imported: number }>("syncTransactions", {});
+      const result = await callPlaid<{ imported: number }>("sync_transactions");
       setModal(null);
       setMessage(`Bank activity synced. ${result.imported} new transactions imported.`);
     } catch (error) {
@@ -486,7 +522,7 @@ export function IceBreakApp() {
             <button className="connect-button" onClick={() => { setFormError(""); openModal("connect"); }}><span>＋</span> Connect bank</button>
           </div>
 
-          {!user && <div className="demo-notice"><span className="notice-icon">i</span><span>{configured ? "Sample numbers are for preview only. Create an account to save your own budget." : "Demo mode is on. Configure Firebase to create an account and sync your budget."}</span><button onClick={() => { setAuthMode("signup"); openModal("signin"); }}>Set up account <span>↗</span></button></div>}
+          {!user && <div className="demo-notice"><span className="notice-icon">i</span><span>{configured ? "Sample numbers are for preview only. Create an account to save your own budget." : "Demo mode is on. Configure Supabase to create an account and sync your budget."}</span><button onClick={() => { setAuthMode("signup"); openModal("signin"); }}>Set up account <span>↗</span></button></div>}
 
           {section === "overview" && (
             <>
@@ -583,7 +619,7 @@ export function IceBreakApp() {
             <article className="panel settings-panel"><div className="panel-heading"><div><h2>Profile</h2><p>Basic account details.</p></div></div><div className="settings-profile"><div className="avatar avatar-large">{profileInitials}</div><div><strong>{profileName}</strong><span>{user ? "Student account" : "Demo student account"}</span></div></div><div className="settings-field"><span>Email</span><strong>{user?.email || "Sign in to add your email"}</strong></div><div className="settings-field"><span>Currency</span><strong>USD · US Dollar</strong></div>
               <button className="primary-button settings-connect" onClick={() => { setFormError(""); openModal("connect"); }}>{bankConnected ? "Bank connected · sync" : "Connect a bank"} <span>↗</span></button>
             </article>
-            <article className="panel settings-panel"><div className="panel-heading"><div><h2>Privacy & security</h2><p>Your financial data belongs to you.</p></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>Private by default</strong><small>Only your account can read its budget; writes are validated in Cloud Functions.</small></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>Bank details stay protected</strong><small>Plaid access tokens are server-side only and cannot be read by the client.</small></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>30-minute idle sign-out</strong><small>Your session is scoped to this browser tab.</small></div></div><button className="primary-button settings-connect" onClick={() => user ? void signOutUser() : (setAuthMode("signup"), openModal("signin"))}>{user ? "Sign out" : "Create your account"} <span>↗</span></button></article>
+            <article className="panel settings-panel"><div className="panel-heading"><div><h2>Privacy & security</h2><p>Your financial data belongs to you.</p></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>Private by default</strong><small>Only your account can read its budget; budget changes are validated by database functions and row-level security.</small></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>Bank details stay protected</strong><small>Plaid access tokens are server-side only and cannot be read by the client.</small></div></div><div className="security-row"><span className="security-check">✓</span><div><strong>30-minute idle sign-out</strong><small>You will be signed out after 30 minutes without activity.</small></div></div><button className="primary-button settings-connect" onClick={() => user ? void signOutUser() : (setAuthMode("signup"), openModal("signin"))}>{user ? "Sign out" : "Create your account"} <span>↗</span></button></article>
           </section>}
 
           <footer className="footer-note"><span>Made for the in-between moments.</span><span>IcebreaK <i>·</i> Your money, your pace.</span></footer>
@@ -596,8 +632,8 @@ export function IceBreakApp() {
         {modal === "goal" && <><span className="modal-kicker">A THING TO LOOK FORWARD TO</span><h2 id="modal-title">Start a savings goal</h2><p className="modal-description">Give your next big thing a name and a number.</p><form onSubmit={handleGoal} className="modal-form"><label>Goal name<input name="name" autoFocus placeholder="e.g. New laptop" maxLength={50} required /></label><div className="form-row"><label>Target amount<input name="target" inputMode="decimal" placeholder="0.00" required /></label><label>Target date <span className="optional-label">optional</span><input name="due" placeholder="e.g. May 2027" maxLength={24} /></label></div>{formError && <p className="form-error">{formError}</p>}<button className="primary-button modal-submit" type="submit">Create goal <span>↗</span></button></form></>}
         {modal === "category" && <><span className="modal-kicker">MAKE YOUR PLAN YOURS</span><h2 id="modal-title">Add a category</h2><p className="modal-description">Choose a slice of each deposit for this part of your life.</p><form onSubmit={handleCategory} className="modal-form"><label>Category name<input name="name" autoFocus placeholder="e.g. Textbooks" maxLength={40} required /></label><div className="form-row"><label>Percentage of income<input name="percentage" type="number" min="0" max="100" step="1" placeholder="10" required /></label><label>Kind<select name="kind"><option value="spending">Spending</option><option value="savings">Savings</option></select></label></div><p className="form-helper">Currently allocated: {percentageTotal}% of 100%.</p>{formError && <p className="form-error">{formError}</p>}<button className="primary-button modal-submit" type="submit">Add category <span>↗</span></button></form></>}
         {modal === "contribution" && <><span className="modal-kicker">SMALL STEPS ADD UP</span><h2 id="modal-title">Add to your goal</h2><p className="modal-description">Move money from your savings category or Safe to Spend into this goal.</p><form onSubmit={handleContribution} className="modal-form"><label>Contribution amount<input name="amount" inputMode="decimal" placeholder="0.00" autoFocus required /></label>{formError && <p className="form-error">{formError}</p>}<button className="primary-button modal-submit" type="submit">Add contribution <span>↗</span></button></form></>}
-        {modal === "connect" && <><div className="modal-icon-art">↗</div><span className="modal-kicker">SECURE BANK CONNECTION</span><h2 id="modal-title">{bankConnected ? "Your bank is connected." : "See your whole picture."}</h2><p className="modal-description">Plaid Link keeps your bank credentials between you and your financial institution. IceBreak receives a token on the server and never exposes it to this browser.</p>{user ? <><div className="connection-steps"><span><i>1</i> {bankConnected ? "Your Plaid connection is active" : "Sign in to your bank through Plaid"}</span><span><i>2</i> Review and approve Transactions access</span><span><i>3</i> IceBreak imports recent activity</span></div>{formError && <p className="form-error">{formError}</p>}{bankConnected ? <button className="primary-button modal-submit" onClick={() => void syncBankTransactions()} disabled={syncingBank}>{syncingBank ? "Syncing…" : "Sync transactions now"} <span>↗</span></button> : <button className="primary-button modal-submit" onClick={() => void handleConnectBank()}>Open secure Plaid Link <span>↗</span></button>}</> : <><div className="connection-steps"><span><i>1</i> Create a Firebase account</span><span><i>2</i> Add your Plaid Sandbox credentials</span><span><i>3</i> Connect with Plaid Link</span></div><button className="primary-button modal-submit" onClick={() => { setAuthMode("signup"); openModal("signin"); }}>Create account <span>↗</span></button></>}</>}
-        {modal === "signin" && <><div className="modal-icon-art">✳</div><span className="modal-kicker">YOUR MONEY, YOUR PACE</span><h2 id="modal-title">{authMode === "signup" ? "Make this space yours." : "Welcome back."}</h2>{configured ? <><p className="modal-description">Your account keeps your own budget and transactions private. Sessions sign out after 30 minutes without activity.</p><form onSubmit={handleAuth} className="modal-form">{authMode === "signup" && <label>Your name<input name="name" autoFocus placeholder="e.g. Alex Rivera" maxLength={80} required /></label>}<label>Email<input name="email" type="email" autoFocus={authMode === "signin"} autoComplete="email" required /></label><label>Password<input name="password" type="password" minLength={6} autoComplete={authMode === "signup" ? "new-password" : "current-password"} required /></label>{formError && <p className="form-error">{formError}</p>}<button className="primary-button modal-submit" type="submit" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"} <span>↗</span></button></form><button className="text-link" onClick={() => { setAuthMode(authMode === "signup" ? "signin" : "signup"); setFormError(""); }}>{authMode === "signup" ? "Already have an account? Sign in" : "New to IceBreak? Create an account"}</button></> : <><p className="modal-description">Firebase isn’t configured in this deployment yet. You can keep exploring the sample workspace; account creation will be available after setup.</p><button className="primary-button modal-submit" onClick={() => setModal(null)}>Continue in demo <span>↗</span></button></>}</>}
+        {modal === "connect" && <><div className="modal-icon-art">↗</div><span className="modal-kicker">SECURE BANK CONNECTION</span><h2 id="modal-title">{bankConnected ? "Your bank is connected." : "See your whole picture."}</h2><p className="modal-description">Plaid Link keeps your bank credentials between you and your financial institution. IceBreak receives a token on the server and never exposes it to this browser.</p>{user ? <><div className="connection-steps"><span><i>1</i> {bankConnected ? "Your Plaid connection is active" : "Sign in to your bank through Plaid"}</span><span><i>2</i> Review and approve Transactions access</span><span><i>3</i> IceBreak imports recent activity</span></div>{formError && <p className="form-error">{formError}</p>}{bankConnected ? <button className="primary-button modal-submit" onClick={() => void syncBankTransactions()} disabled={syncingBank}>{syncingBank ? "Syncing…" : "Sync transactions now"} <span>↗</span></button> : <button className="primary-button modal-submit" onClick={() => void handleConnectBank()}>Open secure Plaid Link <span>↗</span></button>}</> : <><div className="connection-steps"><span><i>1</i> Create a Supabase account</span><span><i>2</i> Add your Plaid Sandbox credentials as Supabase Edge Function secrets</span><span><i>3</i> Connect with Plaid Link</span></div><button className="primary-button modal-submit" onClick={() => { setAuthMode("signup"); openModal("signin"); }}>Create account <span>↗</span></button></>}</>}
+        {modal === "signin" && <><div className="modal-icon-art">✳</div><span className="modal-kicker">YOUR MONEY, YOUR PACE</span><h2 id="modal-title">{authMode === "signup" ? "Make this space yours." : "Welcome back."}</h2>{configured ? <><p className="modal-description">Your account keeps your own budget and transactions private. Sessions sign out after 30 minutes without activity.</p><form onSubmit={handleAuth} className="modal-form">{authMode === "signup" && <label>Your name<input name="name" autoFocus placeholder="e.g. Alex Rivera" maxLength={80} required /></label>}<label>Email<input name="email" type="email" autoFocus={authMode === "signin"} autoComplete="email" required /></label><label>Password<input name="password" type="password" minLength={6} autoComplete={authMode === "signup" ? "new-password" : "current-password"} required /></label>{formError && <p className="form-error">{formError}</p>}<button className="primary-button modal-submit" type="submit" disabled={authBusy}>{authBusy ? "Please wait…" : authMode === "signup" ? "Create account" : "Sign in"} <span>↗</span></button></form><button className="text-link" onClick={() => { setAuthMode(authMode === "signup" ? "signin" : "signup"); setFormError(""); }}>{authMode === "signup" ? "Already have an account? Sign in" : "New to IceBreak? Create an account"}</button></> : <><p className="modal-description">Supabase isn’t configured in this deployment yet. You can keep exploring the sample workspace; account creation will be available after setup.</p><button className="primary-button modal-submit" onClick={() => setModal(null)}>Continue in demo <span>↗</span></button></>}</>}
       </section></div>}
     </div>
   );
@@ -614,4 +650,3 @@ function TransactionTableRow({ transaction, categories }: { transaction: Transac
   const category = categories.find((item) => item.id === transaction.categoryId);
   return <div className="table-row"><div className="table-transaction"><span className={`transaction-icon ${transaction.type === "income" ? "transaction-income" : ""}`}>{transaction.type === "income" ? "↙" : category?.icon ?? "◦"}</span><strong>{transaction.description}</strong></div><span>{category?.name ?? "Safe to Spend"}</span><span>{dateLabel(transaction.date)}</span><strong className={`transaction-amount ${transaction.type === "income" ? "amount-income" : ""}`}>{transaction.type === "income" ? "+" : "−"}{formatMoney(transaction.amountCents)}</strong></div>;
 }
-
