@@ -1,23 +1,15 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import {
-  createUserWithEmailAndPassword,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  sendEmailVerification,
-  signOut,
-  updateProfile,
-  type User,
-} from "firebase/auth";
-import { firebaseConfigured, getFirebaseClient } from "@/lib/firebase";
+import type { User } from "@supabase/supabase-js";
+import { createClient, supabaseConfigured } from "@/lib/supabase/client";
 
 type AuthContextValue = {
   user: User | null;
   ready: boolean;
   configured: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (name: string, email: string, password: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string) => Promise<boolean>;
   signOutUser: () => Promise<void>;
 };
 
@@ -26,23 +18,18 @@ const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [ready, setReady] = useState(!firebaseConfigured);
+  const [ready, setReady] = useState(!supabaseConfigured);
   const lastActivity = useRef(Date.now());
 
   useEffect(() => {
-    const client = getFirebaseClient();
-    if (!client) return;
-    let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
-    void client.persistenceReady.then(() => {
-      if (cancelled) return;
-      unsubscribe = onAuthStateChanged(client.auth, (nextUser) => {
-        setUser(nextUser);
-        setReady(true);
-        lastActivity.current = Date.now();
-      });
-    }).catch(() => setReady(true));
-    return () => { cancelled = true; unsubscribe?.(); };
+    const supabase = createClient();
+    if (!supabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setReady(true);
+      lastActivity.current = Date.now();
+    });
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -52,8 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     events.forEach((event) => window.addEventListener(event, markActive, { passive: true }));
     const timer = window.setInterval(() => {
       if (Date.now() - lastActivity.current >= IDLE_TIMEOUT_MS) {
-        const client = getFirebaseClient();
-        if (client) void signOut(client.auth);
+        const supabase = createClient();
+        if (supabase) void supabase.auth.signOut();
       }
     }, 30_000);
     return () => {
@@ -63,27 +50,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const client = getFirebaseClient();
-    if (!client) throw new Error("Firebase is not configured yet. Use demo mode or finish the Firebase setup.");
-    await client.persistenceReady;
-    await signInWithEmailAndPassword(client.auth, email.trim(), password);
+    const supabase = createClient();
+    if (!supabase) throw new Error("Supabase is not configured yet. Use demo mode or finish the Supabase setup.");
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) throw error;
   }, []);
 
   const signUp = useCallback(async (name: string, email: string, password: string) => {
-    const client = getFirebaseClient();
-    if (!client) throw new Error("Firebase is not configured yet. Use demo mode or finish the Firebase setup.");
-    await client.persistenceReady;
-    const credential = await createUserWithEmailAndPassword(client.auth, email.trim(), password);
-    if (name.trim()) await updateProfile(credential.user, { displayName: name.trim() });
-    await sendEmailVerification(credential.user);
+    const supabase = createClient();
+    if (!supabase) throw new Error("Supabase is not configured yet. Use demo mode or finish the Supabase setup.");
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: { full_name: name.trim() },
+        emailRedirectTo: typeof window === "undefined" ? undefined : window.location.origin,
+      },
+    });
+    if (error) throw error;
+    return !data.session;
   }, []);
 
   const signOutUser = useCallback(async () => {
-    const client = getFirebaseClient();
-    if (client) await signOut(client.auth);
+    const supabase = createClient();
+    if (supabase) {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    }
   }, []);
 
-  const value = useMemo(() => ({ user, ready, configured: firebaseConfigured, signIn, signUp, signOutUser }), [user, ready, signIn, signUp, signOutUser]);
+  const value = useMemo(() => ({ user, ready, configured: supabaseConfigured, signIn, signUp, signOutUser }), [user, ready, signIn, signUp, signOutUser]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

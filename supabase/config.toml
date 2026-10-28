@@ -1,0 +1,4 @@
+project_id = "bylkppsxkoekbnhwgwnk"
+
+[functions.plaid]
+verify_jwt = true

@@ -7,10 +7,5 @@ coverage/
 .env.*
 !.env.example
 .vercel/
-.firebase/
-firebase-debug.log
-firestore-debug.log
-functions/node_modules/
-functions/lib/
 *.tsbuildinfo
 next-env.d.ts
