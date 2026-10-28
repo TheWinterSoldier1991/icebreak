@@ -61,7 +61,3 @@ The Vercel project already has the project URL and publishable key in all three 
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
 After changing environment variables, redeploy so the deployment receives them.
-
-## Existing Firebase data
-
-Firebase accounts and budgets are not copied by this migration. Existing users need to register with Supabase; Firebase password credentials cannot be reused automatically. Firebase setup files and functions are being removed from the active app code, but the old Firebase project is not deleted.
