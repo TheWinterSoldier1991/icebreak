@@ -69,19 +69,15 @@ alter table public.transactions enable row level security;
 alter table public.goals enable row level security;
 alter table public.plaid_items enable row level security;
 
-drop policy if exists profiles_select_own on public.profiles;
 create policy profiles_select_own on public.profiles
   for select to authenticated using ((select auth.uid()) = id);
 
-drop policy if exists categories_select_own on public.categories;
 create policy categories_select_own on public.categories
   for select to authenticated using ((select auth.uid()) = user_id);
 
-drop policy if exists transactions_select_own on public.transactions;
 create policy transactions_select_own on public.transactions
   for select to authenticated using ((select auth.uid()) = user_id);
 
-drop policy if exists goals_select_own on public.goals;
 create policy goals_select_own on public.goals
   for select to authenticated using ((select auth.uid()) = user_id);
 
@@ -117,7 +113,6 @@ end;
 $$;
 
 revoke all on function private.handle_new_user() from public, anon, authenticated, service_role;
-drop trigger if exists on_auth_user_created_icebreak on auth.users;
 create trigger on_auth_user_created_icebreak
   after insert on auth.users
   for each row execute function private.handle_new_user();
@@ -435,3 +430,4 @@ begin
   end if;
 end;
 $$;
+

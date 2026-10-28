@@ -1,6 +1,6 @@
 # Supabase setup
 
-IcebreaK uses Supabase project `bylkppsxkoekbnhwgwnk` for user accounts and saved budgets. The Vercel project already has `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` configured for Production, Preview, and Development.
+IcebreaK uses the Supabase project **Project IcebreaK** (`bylkppsxkoekbnhwgwnk`) for user accounts and saved budgets. The Vercel project already has `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` configured for Production, Preview, and Development.
 
 ## 1. Apply the database migration
 
@@ -12,9 +12,9 @@ npx supabase@latest link --project-ref bylkppsxkoekbnhwgwnk
 npx supabase@latest db push
 ```
 
-Review the migration before applying it: `supabase/migrations/20261027010000_icebreak_supabase_backend.sql`. It creates the profile, category, transaction, goal, and private Plaid-token tables, owner-only read policies, signup defaults, and validated budget-write functions. Realtime is enabled for the budget tables when the project has the standard `supabase_realtime` publication.
+The migration `supabase/migrations/20261028024906_icebreak_supabase_backend.sql` creates the profile, category, transaction, goal, and private Plaid-token tables, owner-only read policies, signup defaults, and validated budget-write functions. Realtime is enabled for the budget tables when the project has the standard `supabase_realtime` publication. It has already been applied to **Project IcebreaK**; `db push` will see its version as applied.
 
-The Supabase connector available to Codex could not access this project, so the migration has not been applied from this workspace. `db push` is the step that creates the live schema.
+For a fresh Supabase project, run the commands above to apply the migration.
 
 ## 2. Enable email and password sign-in
 
@@ -61,3 +61,8 @@ The Vercel project already has the project URL and publishable key in all three 
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
 After changing environment variables, redeploy so the deployment receives them.
+
+## Existing Firebase data
+
+Firebase accounts and budgets are not copied by this migration. Existing users need to register with Supabase; Firebase password credentials cannot be reused automatically. Firebase setup files and functions are being removed from the active app code, but the old Firebase project is not deleted.
+
