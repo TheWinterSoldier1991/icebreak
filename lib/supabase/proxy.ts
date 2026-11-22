@@ -2,6 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function updateSession(request: NextRequest) {
+  // Keep PKCE verifier and session cookies on the same production origin.
+  if (request.nextUrl.hostname.endsWith(".vercel.app") && request.nextUrl.hostname !== "icebreak-ten.vercel.app") {
+    const canonical = new URL(request.nextUrl.pathname + request.nextUrl.search, "https://icebreak-ten.vercel.app");
+    return NextResponse.redirect(canonical);
+  }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) return NextResponse.next({ request });
@@ -18,6 +23,17 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
+  const code = request.nextUrl.searchParams.get("code");
+  if (code && request.nextUrl.pathname === "/") {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const destination = new URL("/", request.url);
+    if (error) destination.searchParams.set("auth_error", "confirmation");
+    const redirect = NextResponse.redirect(destination);
+    response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+    redirect.headers.set("Cache-Control", "private, no-store");
+    return redirect;
+  }
   await supabase.auth.getClaims();
   return response;
 }
+
