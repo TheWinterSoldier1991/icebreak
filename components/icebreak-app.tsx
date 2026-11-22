@@ -29,28 +29,11 @@ type Modal = "transaction" | "goal" | "contribution" | "category" | "connect" | 
 
 const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
-const initialCategories: BudgetCategory[] = [
-  { id: "rent", name: "Rent & bills", icon: "⌂", color: "#537f72", targetPercent: 35, targetCents: 125000, spentCents: 84640, balanceCents: 40360, kind: "spending" },
-  { id: "food", name: "Food & groceries", icon: "✳", color: "#d89954", targetPercent: 20, targetCents: 72000, spentCents: 43270, balanceCents: 28730, kind: "spending" },
-  { id: "transport", name: "Transport", icon: "↗", color: "#7397a0", targetPercent: 10, targetCents: 36000, spentCents: 12800, balanceCents: 23200, kind: "spending" },
-  { id: "books", name: "Books & school", icon: "▤", color: "#9d8bbc", targetPercent: 10, targetCents: 36000, spentCents: 17450, balanceCents: 18550, kind: "spending" },
-  { id: "savings", name: "Savings", icon: "✿", color: "#739677", targetPercent: 15, targetCents: 54000, spentCents: 0, balanceCents: 54000, kind: "savings" },
-  { id: "fun", name: "Just for fun", icon: "☼", color: "#d17f78", targetPercent: 10, targetCents: 36000, spentCents: 21800, balanceCents: 14200, kind: "spending" },
-];
+const initialCategories: BudgetCategory[] = [];
 
-const initialTransactions: Transaction[] = [
-  { id: "tx-1", description: "Campus bookstore", categoryId: "books", amountCents: 4899, type: "expense", date: new Date() },
-  { id: "tx-2", description: "Grocery run", categoryId: "food", amountCents: 7246, type: "expense", date: new Date() },
-  { id: "tx-3", description: "Part-time paycheck", categoryId: "available", amountCents: 125000, type: "income", date: new Date(Date.now() - 86400000) },
-  { id: "tx-4", description: "Monthly rent", categoryId: "rent", amountCents: 82500, type: "expense", date: new Date(Date.now() - 2 * 86400000) },
-  { id: "tx-5", description: "Bus pass", categoryId: "transport", amountCents: 2800, type: "expense", date: new Date(Date.now() - 3 * 86400000) },
-  { id: "tx-6", description: "Coffee with Maya", categoryId: "fun", amountCents: 890, type: "expense", date: new Date(Date.now() - 4 * 86400000) },
-];
+const initialTransactions: Transaction[] = [];
 
-const initialGoals: Goal[] = [
-  { id: "goal-1", name: "Spring break", targetCents: 120000, savedCents: 73500, due: "Mar 2027" },
-  { id: "goal-2", name: "Emergency cushion", targetCents: 200000, savedCents: 82000, due: "May 2027" },
-];
+const initialGoals: Goal[] = [];
 
 const navItems: { id: Section; label: string; icon: string }[] = [
   { id: "overview", label: "Overview", icon: "▦" },
@@ -86,7 +69,7 @@ export function IceBreakApp() {
   const [categories, setCategories] = useState(initialCategories);
   const [transactions, setTransactions] = useState(initialTransactions);
   const [goals, setGoals] = useState(initialGoals);
-  const [unallocatedCents, setUnallocatedCents] = useState(57840);
+  const [unallocatedCents, setUnallocatedCents] = useState(0);
   const [modal, setModal] = useState<Modal>(null);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -126,7 +109,7 @@ export function IceBreakApp() {
       setCategories(initialCategories);
       setTransactions(initialTransactions);
       setGoals(initialGoals);
-      setUnallocatedCents(57840);
+      setUnallocatedCents(0);
       setBankConnected(false);
       return;
     }
@@ -478,7 +461,7 @@ export function IceBreakApp() {
         <nav className="side-nav" aria-label="Main navigation">
           {navItems.map((item) => (
             <button key={item.id} className={`nav-item ${section === item.id ? "nav-item-active" : ""}`} onClick={() => chooseSection(item.id)} aria-current={section === item.id ? "page" : undefined}>
-              <Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "activity" && <span className="nav-count">6</span>}
+              <Icon>{item.icon}</Icon><span>{item.label}</span>{item.id === "activity" && <span className="nav-count">{transactions.length}</span>}
             </button>
           ))}
         </nav>
@@ -650,3 +633,5 @@ function TransactionTableRow({ transaction, categories }: { transaction: Transac
   const category = categories.find((item) => item.id === transaction.categoryId);
   return <div className="table-row"><div className="table-transaction"><span className={`transaction-icon ${transaction.type === "income" ? "transaction-income" : ""}`}>{transaction.type === "income" ? "↙" : category?.icon ?? "◦"}</span><strong>{transaction.description}</strong></div><span>{category?.name ?? "Safe to Spend"}</span><span>{dateLabel(transaction.date)}</span><strong className={`transaction-amount ${transaction.type === "income" ? "amount-income" : ""}`}>{transaction.type === "income" ? "+" : "−"}{formatMoney(transaction.amountCents)}</strong></div>;
 }
+
+
