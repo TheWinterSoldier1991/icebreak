@@ -1,13 +1,21 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { IceBreakApp } from "@/components/icebreak-app";
 import { useAuth } from "@/lib/auth-context";
 export default function HomePage() {
   const { user, ready, configured, signIn, signUp } = useAuth();
-  const [signup, setSignup] = useState(true);
+  const [signup, setSignup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    if (query.has("auth_error") || query.has("error") || hash.has("error")) {
+      setNotice("This confirmation link has expired, was already used, or was opened in a different browser. If your email is confirmed, sign in with the password you created. You do not need to create another account.");
+      window.history.replaceState(null, "", "/");
+    }
+  }, []);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
